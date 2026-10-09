@@ -133,12 +133,13 @@ export default function ResultsView({
   useEffect(() => {
     const canvas = radialRef.current;
     if (!canvas) return;
+    const peakLabels = result.peaks.map((p) => p.plane);
     const referenceLines = [
       result.latticeReferences.d1 !== null
-        ? { freq: 1.0 / result.latticeReferences.d1, color: "#ef4444", label: "(020)" }
+        ? { freq: 1.0 / result.latticeReferences.d1, color: "#ef4444", label: peakLabels[0] ?? "d₁" }
         : null,
       result.latticeReferences.d2 !== null
-        ? { freq: 1.0 / result.latticeReferences.d2, color: "#06b6d4", label: "(021)" }
+        ? { freq: 1.0 / result.latticeReferences.d2, color: "#06b6d4", label: peakLabels[1] ?? "d₂" }
         : null,
     ].filter((line): line is { freq: number; color: string; label: string } => line !== null);
     renderRadialProfile(canvas, result.radialProfile.freq, result.radialProfile.mag, referenceLines);
@@ -217,12 +218,14 @@ export default function ResultsView({
     }
     lines.push("");
     lines.push("Validation");
-    if (result.angleDiff !== null) {
-      lines.push(`Angle (020)-(021) deg,${result.angleDiff.toFixed(1)} (ref 60)`);
-      lines.push(`Frequency ratio,${result.freqRatio?.toFixed(3)} (ref 1.998)`);
-    } else {
-      lines.push("Angle (020)-(021) deg,N/A (both reflectors not detected)");
-    }
+      const plane1 = result.peaks[0]?.plane ?? "refl1";
+      const plane2 = result.peaks[1]?.plane ?? "refl2";
+      if (result.angleDiff !== null) {
+        lines.push(`Angle ${plane1}-${plane2} deg,${result.angleDiff.toFixed(1)}`);
+        lines.push(`Frequency ratio,${result.freqRatio?.toFixed(3)}`);
+      } else {
+        lines.push(`Angle ${plane1}-${plane2} deg,N/A (both reflectors not detected)`);
+      }
     lines.push("");
     lines.push("Filter Energy (%)");
     lines.push(`Band-pass,${result.filters.bandpassEnergy.toFixed(2)}`);
@@ -401,12 +404,12 @@ export default function ResultsView({
               <div className="flex gap-4 mt-3 text-xs">
               {result.latticeReferences.d1 !== null && (
                 <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-0.5 bg-red-500" /> (020) {result.latticeReferences.d1.toFixed(3)} nm
+                  <span className="w-3 h-0.5 bg-red-500" /> {result.peaks[0]?.plane ?? "d₁"} {result.latticeReferences.d1.toFixed(3)} nm
                 </span>
               )}
               {result.latticeReferences.d2 !== null && (
                 <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-0.5 bg-cyan-500" /> (021) {result.latticeReferences.d2.toFixed(3)} nm
+                  <span className="w-3 h-0.5 bg-cyan-500" /> {result.peaks[1]?.plane ?? "d₂"} {result.latticeReferences.d2.toFixed(3)} nm
                 </span>
               )}
               <span className="flex items-center gap-1.5">
@@ -523,8 +526,7 @@ export default function ResultsView({
           </div>
           <p className="text-xs text-slate-400 mt-2">
             Skala dikalibrasi dari puncak kisi yang terdeteksi (SNR ≥{" "}
-            {result.peakSnrThreshold} dB). Acuan: crocidolite (020) d=0.903 nm,
-            (021) d=0.452 nm.
+            {result.peakSnrThreshold} dB) sesuai material yang dipilih.
           </p>
         </div>
 
@@ -590,17 +592,15 @@ export default function ResultsView({
           {result.angleDiff !== null ? (
             <div className="grid md:grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-slate-500">Sudut (020)–(021)</p>
+                <p className="text-slate-500">Sudut antar reflektor</p>
                 <p className="font-mono font-semibold text-slate-800">
-                  {result.angleDiff.toFixed(1)}°{" "}
-                  <span className="text-slate-400 font-normal">(acuan 60°)</span>
+                  {result.angleDiff.toFixed(1)}°
                 </p>
               </div>
               <div>
                 <p className="text-slate-500">Rasio frekuensi</p>
                 <p className="font-mono font-semibold text-slate-800">
-                  {result.freqRatio?.toFixed(3)}{" "}
-                  <span className="text-slate-400 font-normal">(acuan 1.998)</span>
+                  {result.freqRatio?.toFixed(3)}
                 </p>
               </div>
             </div>

@@ -33,7 +33,7 @@ import type {
   FftData,
 } from "./types";
 
-// Reference d-spacings for crocidolite asbestos
+// SNR threshold for lattice peak detection
 const PEAK_SNR_THRESHOLD_DB = 15.0;
 
 // Frequency bands (nm^-1) — absolute, fair for both instruments
@@ -107,8 +107,8 @@ function detectPeaks(
 ): LatticePeak[] {
   const peaks: LatticePeak[] = [];
   const configured = [
-    { plane: "(020)", dRef: references.d1 },
-    { plane: "(021)", dRef: references.d2 },
+    { plane: references.d1 !== null ? "d₁" : "", dRef: references.d1 },
+    { plane: references.d2 !== null ? "d₂" : "", dRef: references.d2 },
   ].filter((reference): reference is { plane: string; dRef: number } =>
     reference.dRef !== null && Number.isFinite(reference.dRef) && reference.dRef > 0,
   );

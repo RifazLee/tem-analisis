@@ -115,12 +115,13 @@ export default function UploadStep({ onImageLoaded, error }: UploadStepProps) {
             <Microscope className="w-8 h-8 text-blue-600" />
           </div>
           <h2 className="text-2xl font-bold text-slate-800">
-            Analisis Citra TEM Asbestos (Crocidolite)
+            Analisis Citra TEM Kristalografi
           </h2>
           <p className="text-sm text-slate-500 mt-2 max-w-xl mx-auto">
             Unggah gambar TIFF dari mikroskop TEM, masukkan skala piksel (nm/piksel),
-            lalu tandai area yang akan dianalisis. Sistem akan menghitung statistik
-            domain ruang, FFT, kalibrasi kisi, dan inverse FFT.
+            pilih material atau masukkan referensi kisi, lalu tandai area yang akan
+            dianalisis. Sistem akan menghitung statistik domain ruang, FFT, kalibrasi
+            kisi, dan inverse FFT.
           </p>
         </div>
 

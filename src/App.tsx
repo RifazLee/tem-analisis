@@ -128,7 +128,7 @@ function App() {
                 TEM Analyzer
               </h1>
               <p className="text-xs text-slate-500 leading-tight">
-                Analisis Citra Asbestos Crocidolite
+                Analisis Citra TEM Kristalografi
               </p>
             </div>
           </div>
