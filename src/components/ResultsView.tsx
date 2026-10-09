@@ -27,7 +27,7 @@ interface ResultsViewProps {
 }
 
 const ZOOM = 1.0;
-const ZOOM_FILTER = 400;
+const ZOOM_FILTER = 480;
 
 export default function ResultsView({
   result,
@@ -53,7 +53,7 @@ export default function ResultsView({
   useEffect(() => {
     const canvas = fullImgRef.current;
     if (!canvas || !imageDisplayData) return;
-    const dispW = Math.min(600, imageCols);
+    const dispW = Math.min(800, imageCols);
     const dispH = Math.round((dispW * imageRows) / imageCols);
     renderGrayscaleToCanvas(canvas, imageDisplayData, imageRows, imageCols, dispW, dispH);
 
@@ -77,7 +77,7 @@ export default function ResultsView({
   useEffect(() => {
     const canvas = roiRef.current;
     if (!canvas) return;
-    const dispSize = Math.min(400, result.roiRows, result.roiCols);
+    const dispSize = Math.min(500, result.roiRows, result.roiCols);
     renderGrayscaleToCanvas(
       canvas,
       result.roiData,
@@ -303,7 +303,7 @@ export default function ResultsView({
             Domain Ruang — Metrik Statistik
           </h3>
         </div>
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid md:grid-cols-2 gap-6 mb-6">
           <div className="overflow-hidden rounded-lg border border-slate-200">
             <table className="w-full text-sm">
               <thead className="bg-slate-50">
@@ -356,22 +356,24 @@ export default function ResultsView({
               </tbody>
             </table>
           </div>
-          <div>
-            <p className="text-sm font-medium text-slate-600 mb-2">
-              Histogram intensitas ROI
-            </p>
+        </div>
+
+        {/* Histogram full width */}
+        <div className="mt-6">
+          <p className="text-sm font-medium text-slate-600 mb-2">
+            Histogram intensitas ROI — Probability Density vs Intensitas Asli
+          </p>
+          <div className="flex justify-center">
             <canvas
               ref={histRef}
-              width={400}
-              height={200}
-              className="w-full rounded-lg border border-slate-200 bg-white"
+              className="rounded-lg border border-slate-200 bg-white"
             />
-            <p className="text-xs text-slate-400 mt-2">
-              Distribusi nilai intensitas asli (level detektor) pada ROI.
-              Sumbu-Y: probability density P(x) = count / (N × binWidth).
-              Sumbu-X: intensitas asli level detektor.
-            </p>
           </div>
+          <p className="text-xs text-slate-400 mt-2">
+            Distribusi nilai intensitas asli (level detektor) pada ROI.
+            Sumbu-Y: probability density P(x) = count / (N × binWidth).
+            Sumbu-X: intensitas asli level detektor.
+          </p>
         </div>
       </section>
 
@@ -392,8 +394,8 @@ export default function ResultsView({
               <div className="flex justify-center">
                 <canvas
                   ref={fftRef}
-                  className="w-full max-w-[420px] rounded-lg border border-slate-300 bg-slate-950"
-                  style={{ imageRendering: "pixelated" }}
+                  className="rounded-lg border border-slate-300 bg-slate-950"
+                  style={{ imageRendering: "auto" }}
                 />
               </div>
               <div className="flex gap-4 mt-3 text-xs">
@@ -420,8 +422,8 @@ export default function ResultsView({
               <div className="flex justify-center">
                 <canvas
                   ref={fftCleanRef}
-                  className="w-full max-w-[420px] rounded-lg border border-slate-300 bg-slate-950"
-                  style={{ imageRendering: "pixelated" }}
+                  className="rounded-lg border border-slate-300 bg-slate-950"
+                  style={{ imageRendering: "auto" }}
                 />
               </div>
               <p className="text-xs text-slate-400 mt-2">
@@ -435,12 +437,12 @@ export default function ResultsView({
               <p className="text-sm font-medium text-slate-600 mb-2">
                 Profil frekuensi radial (log scale)
               </p>
-              <canvas
-                ref={radialRef}
-                width={400}
-                height={200}
-                className="w-full rounded-lg border border-slate-200 bg-white"
-              />
+              <div className="flex justify-center">
+                <canvas
+                  ref={radialRef}
+                  className="rounded-lg border border-slate-200 bg-white"
+                />
+              </div>
               <p className="text-xs text-slate-400 mt-2">
                 Rata-rata magnitude FFT per radius (sumbu-Y: rata-rata magnitude skala log,
                 sumbu-X: frekuensi spasial nm⁻¹). Garis putus-putus = frekuensi acuan kisi.
@@ -450,12 +452,12 @@ export default function ResultsView({
               <p className="text-sm font-medium text-slate-600 mb-2">
                 Energi per pita frekuensi
               </p>
-              <canvas
-                ref={bandRef}
-                width={400}
-                height={160}
-                className="w-full rounded-lg border border-slate-200 bg-white"
-              />
+              <div className="flex justify-center">
+                <canvas
+                  ref={bandRef}
+                  className="rounded-lg border border-slate-200 bg-white"
+                />
+              </div>
               <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
                 <div className="text-center">
                   <p className="text-slate-500">Low (d &gt; 2 nm)</p>
