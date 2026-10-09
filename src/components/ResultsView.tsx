@@ -359,24 +359,21 @@ export default function ResultsView({
               </tbody>
             </table>
           </div>
-        </div>
-
-        {/* Histogram full width */}
-        <div className="mt-6">
-          <p className="text-sm font-medium text-slate-600 mb-2">
-            Histogram intensitas ROI — Probability Density vs Intensitas Asli
-          </p>
-          <div className="flex justify-center">
-            <canvas
-              ref={histRef}
-              className="rounded-lg border border-slate-200 bg-white"
-            />
+          <div className="flex flex-col justify-center">
+            <p className="text-sm font-medium text-slate-600 mb-2">
+              Histogram intensitas ROI — Probability Density vs Intensitas Asli
+            </p>
+            <div className="flex justify-center">
+              <canvas
+                ref={histRef}
+                className="rounded-lg border border-slate-200 bg-white"
+              />
+            </div>
+            <p className="text-xs text-slate-400 mt-2">
+              Sumbu-Y: probability density P(x) = count / (N × binWidth).
+              Sumbu-X: intensitas asli level detektor.
+            </p>
           </div>
-          <p className="text-xs text-slate-400 mt-2">
-            Distribusi nilai intensitas asli (level detektor) pada ROI.
-            Sumbu-Y: probability density P(x) = count / (N × binWidth).
-            Sumbu-X: intensitas asli level detektor.
-          </p>
         </div>
       </section>
 
@@ -388,8 +385,9 @@ export default function ResultsView({
             Domain Frekuensi — FFT / Diffraction Pattern
           </h3>
         </div>
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="space-y-4">
+        {/* FFT images on left, charts on right */}
+        <div className="grid md:grid-cols-2 gap-8">
+          <div className="space-y-6">
             <div>
               <p className="text-sm font-medium text-slate-600 mb-2">
                 FFT magnitude (log) — pola diffraction ROI & puncak kisi
@@ -418,7 +416,7 @@ export default function ResultsView({
             </div>
             </div>
 
-            <div>
+            <div className="mt-2">
               <p className="text-sm font-medium text-slate-600 mb-2">
                 FFT magnitude (log) — tanpa penanda (sumbu fx / fy)
               </p>
@@ -435,7 +433,7 @@ export default function ResultsView({
               </p>
             </div>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div>
               <p className="text-sm font-medium text-slate-600 mb-2">
                 Profil frekuensi radial (log scale)

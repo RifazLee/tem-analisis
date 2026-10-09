@@ -163,8 +163,8 @@ export function renderHistogram(
   const w = cssW;
   const h = cssH;
 
-  const padLeft = 70;
-  const padBottom = 42;
+  const padLeft = 72;
+  const padBottom = 52;
   const padTop = 14;
   const padRight = 16;
   const plotW = w - padLeft - padRight;
@@ -257,7 +257,7 @@ export function renderHistogram(
   ctx.rotate(-Math.PI / 2);
   ctx.fillText("Probability Density", 0, 0);
   ctx.restore();
-  ctx.fillText("Intensitas Asli (Level Detektor)", padLeft + plotW / 2, h - 6);
+  ctx.fillText("Intensitas Asli (Level Detektor)", padLeft + plotW / 2, h - 8);
 }
 
 /** Draw a radial profile (log-y) on a canvas with axis labels. */
@@ -275,8 +275,8 @@ export function renderRadialProfile(
   const w = cssW;
   const h = cssH;
 
-  const padLeft = 70;
-  const padBottom = 42;
+  const padLeft = 72;
+  const padBottom = 52;
   const padTop = 14;
   const padRight = 16;
   const plotW = w - padLeft - padRight;
@@ -397,7 +397,7 @@ export function renderRadialProfile(
   ctx.rotate(-Math.PI / 2);
   ctx.fillText("Rata-rata Magnitude (log)", 0, 0);
   ctx.restore();
-  ctx.fillText("Frekuensi Spasial (nm⁻¹)", padLeft + plotW / 2, h - 6);
+  ctx.fillText("Frekuensi Spasial (nm⁻¹)", padLeft + plotW / 2, h - 8);
 }
 
 /**
