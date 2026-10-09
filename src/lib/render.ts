@@ -126,7 +126,7 @@ export function renderFftToCanvas(
   ctx.putImageData(imgData, 0, 0);
 }
 
-/** Draw a histogram on a canvas. */
+/** Draw a histogram on a canvas with axis labels (probability density vs intensity). */
 export function renderHistogram(
   canvas: HTMLCanvasElement,
   counts: number[],
@@ -140,27 +140,101 @@ export function renderHistogram(
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
+  const padLeft = 48;
+  const padBottom = 28;
+  const padTop = 8;
+  const padRight = 8;
+  const plotW = w - padLeft - padRight;
+  const plotH = h - padBottom - padTop;
+
   let maxCount = 0;
-  for (let i = 0; i < counts.length; i++) if (counts[i] > maxCount) maxCount = counts[i];
+  let totalCount = 0;
+  for (let i = 0; i < counts.length; i++) {
+    if (counts[i] > maxCount) maxCount = counts[i];
+    totalCount += counts[i];
+  }
   if (maxCount === 0) return;
 
-  const barWidth = w / counts.length;
-  ctx.fillStyle = color;
-
+  // Convert counts to probability density: P(x) = count / (N * binWidth)
+  // binCenters[i] are evenly spaced; compute binWidth from them
+  const binWidth = binCenters.length > 1
+    ? Math.abs(binCenters[1] - binCenters[0])
+    : 1;
+  const N = totalCount > 0 ? totalCount : 1;
+  let maxDensity = 0;
+  const densities: number[] = [];
   for (let i = 0; i < counts.length; i++) {
-    const barH = (counts[i] / maxCount) * (h - 2);
-    ctx.fillRect(i * barWidth, h - barH, barWidth + 0.5, barH);
+    const d = counts[i] / (N * binWidth);
+    densities.push(d);
+    if (d > maxDensity) maxDensity = d;
+  }
+  if (maxDensity === 0) maxDensity = 1;
+
+  // Draw bars (probability density on Y)
+  const barWidth = plotW / counts.length;
+  ctx.fillStyle = color;
+  for (let i = 0; i < counts.length; i++) {
+    const barH = (densities[i] / maxDensity) * plotH;
+    const x = padLeft + i * barWidth;
+    const y = padTop + plotH - barH;
+    ctx.fillRect(x, y, barWidth + 0.5, barH);
   }
 
+  // Axis lines
   ctx.strokeStyle = "#cbd5e1";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(0, h);
-  ctx.lineTo(w, h);
+  ctx.moveTo(padLeft, padTop);
+  ctx.lineTo(padLeft, padTop + plotH);
+  ctx.lineTo(padLeft + plotW, padTop + plotH);
   ctx.stroke();
+
+  // Y-axis ticks (probability density)
+  ctx.font = "9px sans-serif";
+  ctx.fillStyle = "#64748b";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  const yTicks = 4;
+  for (let i = 0; i <= yTicks; i++) {
+    const val = (maxDensity * i) / yTicks;
+    const y = padTop + plotH - (i / yTicks) * plotH;
+    ctx.fillText(val.toExponential(1), padLeft - 4, y);
+    if (i > 0) {
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.beginPath();
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(padLeft + plotW, y);
+      ctx.stroke();
+    }
+  }
+
+  // X-axis ticks (intensity values)
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const xTicks = 5;
+  const minVal = binCenters[0];
+  const maxVal = binCenters[binCenters.length - 1];
+  for (let i = 0; i <= xTicks; i++) {
+    const val = minVal + ((maxVal - minVal) * i) / xTicks;
+    const x = padLeft + (i / xTicks) * plotW;
+    ctx.fillText(val.toFixed(0), x, padTop + plotH + 4);
+  }
+
+  // Axis labels
+  ctx.font = "bold 10px sans-serif";
+  ctx.fillStyle = "#475569";
+  ctx.textAlign = "center";
+  // Y label (rotated)
+  ctx.save();
+  ctx.translate(12, padTop + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText("Probability Density", 0, 0);
+  ctx.restore();
+  // X label
+  ctx.fillText("Intensitas Asli (Level Detektor)", padLeft + plotW / 2, h - 4);
 }
 
-/** Draw a radial profile (log-y) on a canvas. */
+/** Draw a radial profile (log-y) on a canvas with axis labels. */
 export function renderRadialProfile(
   canvas: HTMLCanvasElement,
   freq: number[],
@@ -173,6 +247,13 @@ export function renderRadialProfile(
   const w = canvas.width;
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
+
+  const padLeft = 48;
+  const padBottom = 28;
+  const padTop = 8;
+  const padRight = 8;
+  const plotW = w - padLeft - padRight;
+  const plotH = h - padBottom - padTop;
 
   let maxFreq = 0;
   for (let i = 0; i < freq.length; i++) if (freq[i] > maxFreq) maxFreq = freq[i];
@@ -195,16 +276,27 @@ export function renderRadialProfile(
   // Reference lines
   for (const ref of refLines) {
     if (ref.freq > maxFreq) continue;
-    const x = (ref.freq / maxFreq) * w;
+    const x = padLeft + (ref.freq / maxFreq) * plotW;
     ctx.strokeStyle = ref.color;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([5, 4]);
     ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, h);
+    ctx.moveTo(x, padTop);
+    ctx.lineTo(x, padTop + plotH);
     ctx.stroke();
   }
   ctx.setLineDash([]);
+
+  // Reference line labels
+  for (const ref of refLines) {
+    if (ref.freq > maxFreq) continue;
+    const x = padLeft + (ref.freq / maxFreq) * plotW;
+    ctx.font = "9px sans-serif";
+    ctx.fillStyle = ref.color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(ref.label, x, padTop + plotH - 2);
+  }
 
   // Profile curve
   ctx.strokeStyle = "#3b82f6";
@@ -212,20 +304,64 @@ export function renderRadialProfile(
   ctx.beginPath();
   let started = false;
   for (let i = 0; i < freq.length; i++) {
-    const x = (freq[i] / maxFreq) * w;
+    const x = padLeft + (freq[i] / maxFreq) * plotW;
     const logMagV = mag[i] > 0 ? Math.log10(mag[i]) : logMin;
-    const y = h - ((logMagV - logMin) / logRange) * (h - 4);
+    const y = padTop + plotH - ((logMagV - logMin) / logRange) * (plotH - 4);
     if (!started) { ctx.moveTo(x, y); started = true; }
     else ctx.lineTo(x, y);
   }
   ctx.stroke();
 
-  ctx.strokeStyle = "#e2e8f0";
+  // Axis lines
+  ctx.strokeStyle = "#94a3b8";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(0, h);
-  ctx.lineTo(w, h);
+  ctx.moveTo(padLeft, padTop);
+  ctx.lineTo(padLeft, padTop + plotH);
+  ctx.lineTo(padLeft + plotW, padTop + plotH);
   ctx.stroke();
+
+  // Y-axis ticks (log magnitude)
+  ctx.font = "9px sans-serif";
+  ctx.fillStyle = "#64748b";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  const yTicks = 4;
+  for (let i = 0; i <= yTicks; i++) {
+    const logVal = logMin + (logRange * i) / yTicks;
+    const y = padTop + plotH - (i / yTicks) * plotH;
+    ctx.fillText(`10^${logVal.toFixed(1)}`, padLeft - 4, y);
+    if (i > 0) {
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.beginPath();
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(padLeft + plotW, y);
+      ctx.stroke();
+    }
+  }
+
+  // X-axis ticks (spatial frequency nm^-1)
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const xTicks = 5;
+  for (let i = 0; i <= xTicks; i++) {
+    const val = (maxFreq * i) / xTicks;
+    const x = padLeft + (i / xTicks) * plotW;
+    ctx.fillText(val.toFixed(2), x, padTop + plotH + 4);
+  }
+
+  // Axis labels
+  ctx.font = "bold 10px sans-serif";
+  ctx.fillStyle = "#475569";
+  ctx.textAlign = "center";
+  // Y label (rotated)
+  ctx.save();
+  ctx.translate(12, padTop + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText("Rata-rata Magnitude (log)", 0, 0);
+  ctx.restore();
+  // X label
+  ctx.fillText("Frekuensi Spasial (nm⁻¹)", padLeft + plotW / 2, h - 4);
 }
 
 /**
@@ -362,6 +498,76 @@ export function overlayFftAnnotations(
     ctx.strokeText(label, px, labelY);
     ctx.fillStyle = "#8dff2f";
     ctx.fillText(label, px, labelY);
+  }
+}
+
+/**
+ * Draw fx/fy axis labels on a clean (no annotation) FFT canvas.
+ * Call after renderFftToCanvas so canvas size is already set.
+ */
+export function drawFftAxisLabels(
+  canvas: HTMLCanvasElement,
+  fft: { fx: Float64Array; fy: Float64Array; rows: number; cols: number; df: number },
+  zoomFactor: number,
+): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const { rows, cols, df } = fft;
+  const cy = Math.floor(rows / 2);
+  const cx = Math.floor(cols / 2);
+  const displaySize = canvas.width;
+  if (displaySize === 0) return;
+
+  const halfR = zoomFactor <= 1
+    ? Math.max(cy, rows - 1 - cy)
+    : Math.max(1, Math.floor(rows / (2 * zoomFactor)));
+  const halfC = zoomFactor <= 1
+    ? Math.max(cx, cols - 1 - cx)
+    : Math.max(1, Math.floor(cols / (2 * zoomFactor)));
+  const visFreqY = halfR * df;
+  const visFreqX = halfC * df;
+
+  // Axis label text
+  ctx.font = "bold 13px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+
+  // fx label (bottom center)
+  ctx.fillStyle = "#e2e8f0";
+  ctx.fillText(`fx (nm⁻¹)`, displaySize / 2, displaySize - 6);
+
+  // fy label (left side, rotated)
+  ctx.save();
+  ctx.translate(14, displaySize / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(`fy (nm⁻¹)`, 0, 0);
+  ctx.restore();
+
+  // Tick labels at the edges
+  ctx.font = "10px sans-serif";
+  ctx.fillStyle = "#94a3b8";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  // x-axis ticks
+  const xTickVals = [-visFreqX, 0, visFreqX];
+  const xTickPos = [0, displaySize / 2, displaySize - 1];
+  for (let i = 0; i < xTickVals.length; i++) {
+    if (i === 0) { ctx.textAlign = "left"; }
+    else if (i === 2) { ctx.textAlign = "right"; }
+    else { ctx.textAlign = "center"; }
+    ctx.fillText(xTickVals[i].toFixed(2), xTickPos[i], displaySize - 20);
+  }
+  // y-axis ticks
+  ctx.textBaseline = "middle";
+  const yTickVals = [visFreqY, 0, -visFreqY];
+  const yTickPos = [0, displaySize / 2, displaySize - 1];
+  for (let i = 0; i < yTickVals.length; i++) {
+    if (i === 0) { ctx.textBaseline = "top"; }
+    else if (i === 2) { ctx.textBaseline = "bottom"; }
+    else { ctx.textBaseline = "middle"; }
+    ctx.textAlign = "right";
+    ctx.fillText(yTickVals[i].toFixed(2), 24, yTickPos[i]);
   }
 }
 

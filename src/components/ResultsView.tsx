@@ -3,7 +3,7 @@
  * FFT spectrum, radial profile, histogram, spatial metrics table,
  * lattice peak table, band energy chart, and inverse FFT filtered images.
  */
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import {
   renderGrayscaleToCanvas,
   renderFftToCanvas,
@@ -11,9 +11,10 @@ import {
   renderRadialProfile,
   overlayFftAnnotations,
   renderBandEnergy,
+  drawFftAxisLabels,
 } from "@/lib/render";
 import type { AnalysisResult } from "@/lib/types";
-import { Download, RotateCcw, Microscope, BarChart3, Waves, Grid3x3, Activity } from "lucide-react";
+import { Download, RotateCcw, Microscope, ChartBar as BarChart3, Waves, Grid3x3, Activity } from "lucide-react";
 
 interface ResultsViewProps {
   result: AnalysisResult;
@@ -40,6 +41,7 @@ export default function ResultsView({
   const fullImgRef = useRef<HTMLCanvasElement>(null);
   const roiRef = useRef<HTMLCanvasElement>(null);
   const fftRef = useRef<HTMLCanvasElement>(null);
+  const fftCleanRef = useRef<HTMLCanvasElement>(null);
   const histRef = useRef<HTMLCanvasElement>(null);
   const radialRef = useRef<HTMLCanvasElement>(null);
   const bandRef = useRef<HTMLCanvasElement>(null);
@@ -86,7 +88,7 @@ export default function ResultsView({
     );
   }, [result]);
 
-  // Render FFT
+  // Render FFT (annotated)
   useEffect(() => {
     const canvas = fftRef.current;
     if (!canvas) return;
@@ -104,6 +106,20 @@ export default function ResultsView({
       ZOOM,
       result.latticeReferences,
     );
+  }, [result]);
+
+  // Render clean FFT (no annotations, with axis labels)
+  useEffect(() => {
+    const canvas = fftCleanRef.current;
+    if (!canvas) return;
+    renderFftToCanvas(
+      canvas,
+      result.fft.mag,
+      result.fft.rows,
+      result.fft.cols,
+      ZOOM,
+    );
+    drawFftAxisLabels(canvas, result.fft, ZOOM);
   }, [result]);
 
   // Render histogram
@@ -352,6 +368,8 @@ export default function ResultsView({
             />
             <p className="text-xs text-slate-400 mt-2">
               Distribusi nilai intensitas asli (level detektor) pada ROI.
+              Sumbu-Y: probability density P(x) = count / (N × binWidth).
+              Sumbu-X: intensitas asli level detektor.
             </p>
           </div>
         </div>
@@ -366,18 +384,19 @@ export default function ResultsView({
           </h3>
         </div>
         <div className="grid md:grid-cols-2 gap-6">
-          <div>
-            <p className="text-sm font-medium text-slate-600 mb-2">
-              FFT magnitude (log) — pola diffraction ROI & puncak kisi
-            </p>
-            <div className="flex justify-center">
-              <canvas
-                ref={fftRef}
-                className="w-full max-w-[420px] rounded-lg border border-slate-300 bg-slate-950"
-                style={{ imageRendering: "pixelated" }}
-              />
-            </div>
-            <div className="flex gap-4 mt-3 text-xs">
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium text-slate-600 mb-2">
+                FFT magnitude (log) — pola diffraction ROI & puncak kisi
+              </p>
+              <div className="flex justify-center">
+                <canvas
+                  ref={fftRef}
+                  className="w-full max-w-[420px] rounded-lg border border-slate-300 bg-slate-950"
+                  style={{ imageRendering: "pixelated" }}
+                />
+              </div>
+              <div className="flex gap-4 mt-3 text-xs">
               {result.latticeReferences.d1 !== null && (
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-0.5 bg-red-500" /> (020) {result.latticeReferences.d1.toFixed(3)} nm
@@ -392,6 +411,24 @@ export default function ResultsView({
                 <span className="w-3 h-3 rounded-full border-2 border-lime-500" /> Puncak terdeteksi
               </span>
             </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-slate-600 mb-2">
+                FFT magnitude (log) — tanpa penanda (sumbu fx / fy)
+              </p>
+              <div className="flex justify-center">
+                <canvas
+                  ref={fftCleanRef}
+                  className="w-full max-w-[420px] rounded-lg border border-slate-300 bg-slate-950"
+                  style={{ imageRendering: "pixelated" }}
+                />
+              </div>
+              <p className="text-xs text-slate-400 mt-2">
+                Citra FFT mentah tanpa anotasi. Sumbu horizontal = fx (frekuensi spasial nm⁻¹),
+                sumbu vertikal = fy (frekuensi spasial nm⁻¹). Pusat = DC (frekuensi nol).
+              </p>
+            </div>
           </div>
           <div className="space-y-4">
             <div>
@@ -405,7 +442,8 @@ export default function ResultsView({
                 className="w-full rounded-lg border border-slate-200 bg-white"
               />
               <p className="text-xs text-slate-400 mt-2">
-                Rata-rata magnitude FFT per radius. Garis putus-putus = frekuensi acuan kisi.
+                Rata-rata magnitude FFT per radius (sumbu-Y: rata-rata magnitude skala log,
+                sumbu-X: frekuensi spasial nm⁻¹). Garis putus-putus = frekuensi acuan kisi.
               </p>
             </div>
             <div>
