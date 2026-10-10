@@ -419,7 +419,7 @@ export default function ResultsView({
                 <canvas
                   ref={fftRef}
                   className="rounded-lg border border-slate-300 bg-slate-950"
-                  style={{ imageRendering: "auto" }}
+                  style={{ imageRendering: "auto", width: "100%", maxWidth: "560px", height: "auto" }}
                 />
               </div>
               <div className="flex gap-4 mt-3 text-xs">
@@ -447,7 +447,7 @@ export default function ResultsView({
                 <canvas
                   ref={fftCleanRef}
                   className="rounded-lg border border-slate-300 bg-slate-950"
-                  style={{ imageRendering: "auto" }}
+                  style={{ imageRendering: "auto", width: "100%", maxWidth: "560px", height: "auto" }}
                 />
               </div>
               <p className="text-xs text-slate-400 mt-2">

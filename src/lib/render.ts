@@ -104,7 +104,7 @@ export function renderFftToCanvas(
   if (max === min) max = min + 1;
   const range = max - min;
 
-  const displaySize = 480;
+  const displaySize = 900;
   canvas.width = displaySize;
   canvas.height = displaySize;
 
@@ -401,13 +401,13 @@ export function renderRadialProfile(
 }
 
 /**
- * Overlay reference rings and detected peaks on the FFT canvas.
+ * Overlay reference rings, detected peaks, and axis labels on the FFT canvas.
  * Must be called after renderFftToCanvas so canvas size is set correctly.
  */
 export function overlayFftAnnotations(
   canvas: HTMLCanvasElement,
   fft: { fx: Float64Array; fy: Float64Array; rows: number; cols: number; df: number },
-  peaks: { detected: boolean; pf: [number, number]; dMeasured: number; angleDeg: number; plane: string }[],
+  peaks: { detected: boolean; pf: [number, number]; dMeasured: number; angleDeg: number; plane: string; snrDb?: number; frequency?: number }[],
   zoomFactor: number,
   latticeReferences: { d1: number | null; d2: number | null },
 ): void {
@@ -434,37 +434,107 @@ export function overlayFftAnnotations(
 
   const centerX = f2x(0);
   const centerY = f2y(0);
-  ctx.strokeStyle = "rgba(255,255,255,0.9)";
-  ctx.lineWidth = 1;
-  ctx.setLineDash([5, 5]);
+  const axisMargin = 44;
+  const plotSize = displaySize - axisMargin;
+  const plotOrigin = axisMargin / 2;
+
+  // ── Axis frame ──
+  ctx.strokeStyle = "rgba(200,210,225,0.7)";
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(centerX, 0);
-  ctx.lineTo(centerX, displaySize);
-  ctx.moveTo(0, centerY);
-  ctx.lineTo(displaySize, centerY);
+  ctx.moveTo(plotOrigin, plotOrigin);
+  ctx.lineTo(plotOrigin, plotOrigin + plotSize);
+  ctx.lineTo(plotOrigin + plotSize, plotOrigin + plotSize);
+  ctx.stroke();
+
+  // ── Axis tick marks and labels (fx bottom, fy left) ──
+  ctx.font = "13px sans-serif";
+  ctx.fillStyle = "#cbd5e1";
+  ctx.strokeStyle = "rgba(200,210,225,0.6)";
+  ctx.lineWidth = 1;
+  const nTicks = 5;
+
+  // X-axis ticks
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  for (let i = 0; i <= nTicks; i++) {
+    const t = i / nTicks;
+    const fxVal = -visFreqX + 2 * visFreqX * t;
+    const px = plotOrigin + t * plotSize;
+    ctx.beginPath();
+    ctx.moveTo(px, plotOrigin + plotSize);
+    ctx.lineTo(px, plotOrigin + plotSize + 5);
+    ctx.stroke();
+    ctx.fillText(fxVal.toFixed(2), px, plotOrigin + plotSize + 8);
+  }
+
+  // Y-axis ticks
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let i = 0; i <= nTicks; i++) {
+    const t = i / nTicks;
+    const fyVal = visFreqY - 2 * visFreqY * t;
+    const py = plotOrigin + t * plotSize;
+    ctx.beginPath();
+    ctx.moveTo(plotOrigin, py);
+    ctx.lineTo(plotOrigin - 5, py);
+    ctx.stroke();
+    ctx.fillText(fyVal.toFixed(2), plotOrigin - 8, py);
+  }
+
+  // Axis titles
+  ctx.font = "bold 15px sans-serif";
+  ctx.fillStyle = "#e2e8f0";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillText("fx (nm\u207b\u00b9)", plotOrigin + plotSize / 2, displaySize - 4);
+  ctx.save();
+  ctx.translate(10, plotOrigin + plotSize / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText("fy (nm\u207b\u00b9)", 0, 0);
+  ctx.restore();
+
+  // ── Center crosshair ──
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(centerX, plotOrigin);
+  ctx.lineTo(centerX, plotOrigin + plotSize);
+  ctx.moveTo(plotOrigin, centerY);
+  ctx.lineTo(plotOrigin + plotSize, centerY);
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle = "#ffffff";
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, 3, 0, 2 * Math.PI);
-  ctx.fill();
 
+  // DC marker
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.font = "11px sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText("DC", centerX + 7, centerY + 5);
+
+  // ── Reference rings ──
+  const peakPlaneLabels = peaks.map((p) => p.plane);
   const refRings = [
     latticeReferences.d1 !== null
-      ? { freq: 1.0 / latticeReferences.d1, color: "#ff3b30", label: `${latticeReferences.d1.toFixed(3)} nm` }
+      ? { freq: 1.0 / latticeReferences.d1, color: "#ff3b30", label: `${peakPlaneLabels[0] ?? "d\u2081"}: ${latticeReferences.d1.toFixed(3)} nm` }
       : null,
     latticeReferences.d2 !== null
-      ? { freq: 1.0 / latticeReferences.d2, color: "#00e5ff", label: `${latticeReferences.d2.toFixed(3)} nm` }
+      ? { freq: 1.0 / latticeReferences.d2, color: "#00e5ff", label: `${peakPlaneLabels[1] ?? "d\u2082"}: ${latticeReferences.d2.toFixed(3)} nm` }
       : null,
   ].filter((ring): ring is { freq: number; color: string; label: string } => ring !== null);
 
   for (const ring of refRings) {
     if (ring.freq > Math.min(visFreqX, visFreqY)) continue;
     ctx.strokeStyle = ring.color;
-    ctx.lineWidth = 3;
-    ctx.setLineDash([10, 6]);
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([12, 7]);
     ctx.beginPath();
-    for (let a = 0; a <= 360; a += 2) {
+    for (let a = 0; a <= 360; a += 1.5) {
       const rad = (a * Math.PI) / 180;
       const px = f2x(ring.freq * Math.cos(rad));
       const py = f2y(ring.freq * Math.sin(rad));
@@ -474,16 +544,21 @@ export function overlayFftAnnotations(
     ctx.stroke();
     ctx.setLineDash([]);
 
-    const labelX = Math.min(displaySize - 8, Math.max(8, centerX + ring.freq * (displaySize / (2 * visFreqX))));
-    ctx.font = "bold 12px sans-serif";
+    // Ring label at 45 degrees (upper right)
+    const labelAngle = -Math.PI / 4;
+    const ringLabelX = f2x(ring.freq * Math.cos(labelAngle));
+    const ringLabelY = f2y(ring.freq * Math.sin(labelAngle));
+    ctx.font = "bold 14px sans-serif";
     ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(0,0,0,0.85)";
+    ctx.strokeText(ring.label, ringLabelX + 6, ringLabelY - 6);
     ctx.fillStyle = ring.color;
-    ctx.strokeStyle = "rgba(0,0,0,0.8)";
-    ctx.lineWidth = 3;
-    ctx.strokeText(`d=${ring.label}`, labelX - 46, centerY - 8);
-    ctx.fillText(`d=${ring.label}`, labelX - 46, centerY - 8);
+    ctx.fillText(ring.label, ringLabelX + 6, ringLabelY - 6);
   }
 
+  // ── Detected peaks ──
   for (const peak of peaks) {
     if (!peak.detected) continue;
     const px = f2x(peak.pf[0]);
@@ -491,41 +566,87 @@ export function overlayFftAnnotations(
     const pxM = f2x(-peak.pf[0]);
     const pyM = f2y(-peak.pf[1]);
 
-    ctx.strokeStyle = "#ffe600";
-    ctx.lineWidth = 3;
+    // Diameter line through center
+    ctx.strokeStyle = "rgba(255,230,0,0.6)";
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(pxM, pyM);
     ctx.lineTo(px, py);
     ctx.stroke();
 
+    // Angle arc from center
     const angle = Math.atan2(py - centerY, px - centerX);
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(centerX, centerY, 30, 0, angle, angle < 0);
+    ctx.arc(centerX, centerY, 45, 0, angle, angle < 0);
     ctx.stroke();
 
+    // Peak markers (both peak and Friedel pair)
     for (const [ax, ay] of [[px, py], [pxM, pyM]]) {
+      // Outer glow ring
+      ctx.strokeStyle = "rgba(141,255,47,0.3)";
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(ax, ay, 16, 0, 2 * Math.PI);
+      ctx.stroke();
+      // Main ring
       ctx.strokeStyle = "#8dff2f";
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(ax, ay, 11, 0, 2 * Math.PI);
+      ctx.arc(ax, ay, 12, 0, 2 * Math.PI);
       ctx.stroke();
+      // Center dot
       ctx.fillStyle = "#8dff2f";
       ctx.beginPath();
-      ctx.arc(ax, ay, 3, 0, 2 * Math.PI);
+      ctx.arc(ax, ay, 4, 0, 2 * Math.PI);
       ctx.fill();
     }
 
-    ctx.font = "bold 13px sans-serif";
-    ctx.textAlign = "center";
-    const labelY = py > 32 ? py - 16 : py + 30;
-    const label = `d=${peak.dMeasured.toFixed(3)} nm | ${peak.angleDeg.toFixed(0)}°`;
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = "rgba(0,0,0,0.85)";
-    ctx.strokeText(label, px, labelY);
+    // Detailed label box near peak
+    const labelLines = [
+      peak.plane,
+      `d = ${peak.dMeasured.toFixed(4)} nm`,
+      `\u03b8 = ${peak.angleDeg.toFixed(1)}\u00b0`,
+    ];
+    if (peak.frequency !== undefined) {
+      labelLines.push(`f = ${peak.frequency.toFixed(4)} nm\u207b\u00b9`);
+    }
+    if (peak.snrDb !== undefined) {
+      labelLines.push(`SNR = ${peak.snrDb.toFixed(1)} dB`);
+    }
+
+    const lineH = 17;
+    const boxPad = 8;
+    const labelW = 200;
+    const labelH = labelLines.length * lineH + boxPad * 2;
+
+    let boxX = px + 20;
+    let boxY = py - labelH - 10;
+    if (boxX + labelW > plotOrigin + plotSize) boxX = px - labelW - 20;
+    if (boxY < plotOrigin) boxY = py + 20;
+
+    // Label background
+    ctx.fillStyle = "rgba(10,15,25,0.88)";
+    ctx.strokeStyle = "#8dff2f";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(boxX, boxY, labelW, labelH, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    // Label text
+    ctx.font = "bold 14px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
     ctx.fillStyle = "#8dff2f";
-    ctx.fillText(label, px, labelY);
+    ctx.fillText(labelLines[0], boxX + boxPad, boxY + boxPad);
+
+    ctx.font = "13px sans-serif";
+    ctx.fillStyle = "#e2e8f0";
+    for (let li = 1; li < labelLines.length; li++) {
+      ctx.fillText(labelLines[li], boxX + boxPad, boxY + boxPad + li * lineH);
+    }
   }
 }
 
@@ -556,41 +677,64 @@ export function drawFftAxisLabels(
   const visFreqY = halfR * df;
   const visFreqX = halfC * df;
 
-  ctx.font = "bold 15px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
+  const axisMargin = 44;
+  const plotSize = displaySize - axisMargin;
+  const plotOrigin = axisMargin / 2;
 
-  ctx.fillStyle = "#e2e8f0";
-  ctx.fillText(`fx (nm⁻¹)`, displaySize / 2, displaySize - 8);
+  // Axis frame
+  ctx.strokeStyle = "rgba(200,210,225,0.7)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(plotOrigin, plotOrigin);
+  ctx.lineTo(plotOrigin, plotOrigin + plotSize);
+  ctx.lineTo(plotOrigin + plotSize, plotOrigin + plotSize);
+  ctx.stroke();
 
-  ctx.save();
-  ctx.translate(16, displaySize / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText(`fy (nm⁻¹)`, 0, 0);
-  ctx.restore();
+  ctx.font = "13px sans-serif";
+  ctx.fillStyle = "#cbd5e1";
+  ctx.strokeStyle = "rgba(200,210,225,0.6)";
+  ctx.lineWidth = 1;
+  const nTicks = 5;
 
-  ctx.font = "11px sans-serif";
-  ctx.fillStyle = "#94a3b8";
+  // X-axis ticks
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  const xTickVals = [-visFreqX, 0, visFreqX];
-  const xTickPos = [0, displaySize / 2, displaySize - 1];
-  for (let i = 0; i < xTickVals.length; i++) {
-    if (i === 0) { ctx.textAlign = "left"; }
-    else if (i === 2) { ctx.textAlign = "right"; }
-    else { ctx.textAlign = "center"; }
-    ctx.fillText(xTickVals[i].toFixed(2), xTickPos[i], displaySize - 24);
+  for (let i = 0; i <= nTicks; i++) {
+    const t = i / nTicks;
+    const fxVal = -visFreqX + 2 * visFreqX * t;
+    const px = plotOrigin + t * plotSize;
+    ctx.beginPath();
+    ctx.moveTo(px, plotOrigin + plotSize);
+    ctx.lineTo(px, plotOrigin + plotSize + 5);
+    ctx.stroke();
+    ctx.fillText(fxVal.toFixed(2), px, plotOrigin + plotSize + 8);
   }
+
+  // Y-axis ticks
+  ctx.textAlign = "right";
   ctx.textBaseline = "middle";
-  const yTickVals = [visFreqY, 0, -visFreqY];
-  const yTickPos = [0, displaySize / 2, displaySize - 1];
-  for (let i = 0; i < yTickVals.length; i++) {
-    if (i === 0) { ctx.textBaseline = "top"; }
-    else if (i === 2) { ctx.textBaseline = "bottom"; }
-    else { ctx.textBaseline = "middle"; }
-    ctx.textAlign = "right";
-    ctx.fillText(yTickVals[i].toFixed(2), 26, yTickPos[i]);
+  for (let i = 0; i <= nTicks; i++) {
+    const t = i / nTicks;
+    const fyVal = visFreqY - 2 * visFreqY * t;
+    const py = plotOrigin + t * plotSize;
+    ctx.beginPath();
+    ctx.moveTo(plotOrigin, py);
+    ctx.lineTo(plotOrigin - 5, py);
+    ctx.stroke();
+    ctx.fillText(fyVal.toFixed(2), plotOrigin - 8, py);
   }
+
+  // Axis titles
+  ctx.font = "bold 15px sans-serif";
+  ctx.fillStyle = "#e2e8f0";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillText("fx (nm\u207b\u00b9)", plotOrigin + plotSize / 2, displaySize - 4);
+  ctx.save();
+  ctx.translate(10, plotOrigin + plotSize / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText("fy (nm\u207b\u00b9)", 0, 0);
+  ctx.restore();
 }
 
 /** Draw a bar chart for band energy. */
