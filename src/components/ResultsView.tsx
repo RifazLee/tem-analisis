@@ -28,7 +28,7 @@ interface ResultsViewProps {
 }
 
 const ZOOM = 1.0;
-const ZOOM_FILTER = 480;
+const ZOOM_FILTER = 350;
 
 export default function ResultsView({
   result,

@@ -324,7 +324,7 @@ export function exportToPdf(
   );
   addCanvasImage(
     canvases.bandpass,
-    `Band-pass (${480}\u00d7${480} px)`,
+    `Band-pass (350\u00d7350 px)`,
     `Daya: ${result.filters.bandpassEnergy.toFixed(1)}%`,
     70,
   );
@@ -335,7 +335,7 @@ export function exportToPdf(
     70,
   );
   addParagraph(
-    `Hasil inverse FFT memakai bagian real (bukan |nilai|) untuk menghindari rektifikasi sinyal. Patch ${480}\u00d7${480} px diambil dari pusat ROI agar fringe kisi terlihat jelas.`,
+    `Hasil inverse FFT memakai bagian real (bukan |nilai|) untuk menghindari rektifikasi sinyal. Patch 350\u00d7350 px diambil dari pusat ROI agar fringe kisi terlihat jelas.`,
   );
 
   // ── Footer on each page ──
