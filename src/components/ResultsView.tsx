@@ -247,6 +247,40 @@ export default function ResultsView({
     lines.push(`Band-pass,${result.filters.bandpassEnergy.toFixed(2)}`);
     lines.push(`Bragg,${result.filters.braggEnergy.toFixed(2)}`);
 
+    // ── Histogram raw data ──
+    lines.push("");
+    lines.push("Histogram ROI");
+    lines.push("Bin Index,Bin Center (intensity),Count,Probability Density P(x)");
+    const histCounts = result.histogram.counts;
+    const histCenters = result.histogram.binCenters;
+    let histTotal = 0;
+    for (const c of histCounts) histTotal += c;
+    const binWidth =
+      histCenters.length > 1
+        ? Math.abs(histCenters[1] - histCenters[0])
+        : 1;
+    const histN = histTotal > 0 ? histTotal : 1;
+    for (let i = 0; i < histCounts.length; i++) {
+      const density = histCounts[i] / (histN * binWidth);
+      lines.push(
+        `${i},${histCenters[i].toFixed(4)},${histCounts[i]},${density.toExponential(6)}`,
+      );
+    }
+
+    // ── Radial profile raw data ──
+    lines.push("");
+    lines.push("Radial Profile (log scale)");
+    lines.push("Index,Frequency (nm^-1),Magnitude,Average Magnitude (log10)");
+    const radFreq = result.radialProfile.freq;
+    const radMag = result.radialProfile.mag;
+    for (let i = 0; i < radFreq.length; i++) {
+      const m = radMag[i];
+      const logM = m > 0 ? Math.log10(m) : 0;
+      lines.push(
+        `${i},${radFreq[i].toFixed(6)},${m.toExponential(6)},${logM.toFixed(6)}`,
+      );
+    }
+
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
