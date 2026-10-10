@@ -14,7 +14,8 @@ import {
   drawFftAxisLabels,
 } from "@/lib/render";
 import type { AnalysisResult } from "@/lib/types";
-import { Download, RotateCcw, Microscope, ChartBar as BarChart3, Waves, Grid3x3, Activity } from "lucide-react";
+import { exportToPdf } from "@/lib/pdf-export";
+import { Download, FileDown, RotateCcw, Microscope, ChartBar as BarChart3, Waves, Grid3x3, Activity } from "lucide-react";
 
 interface ResultsViewProps {
   result: AnalysisResult;
@@ -187,6 +188,21 @@ export default function ResultsView({
     renderPatch(braggRef.current, result.filters.braggData);
   }, [result, renderPatch]);
 
+  const handleExportPdf = useCallback(() => {
+    exportToPdf(result, {
+      fullImg: fullImgRef.current,
+      roi: roiRef.current,
+      fft: fftRef.current,
+      fftClean: fftCleanRef.current,
+      hist: histRef.current,
+      radial: radialRef.current,
+      band: bandRef.current,
+      origPatch: origPatchRef.current,
+      bandpass: bandpassRef.current,
+      bragg: braggRef.current,
+    }, fileName);
+  }, [result, fileName]);
+
   const downloadCSV = useCallback(() => {
     const lines: string[] = [];
     lines.push("TEM Analysis Results");
@@ -252,6 +268,13 @@ export default function ResultsView({
           </p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={handleExportPdf}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition"
+          >
+            <FileDown className="w-4 h-4" />
+            Export PDF
+          </button>
           <button
             onClick={downloadCSV}
             className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition"
