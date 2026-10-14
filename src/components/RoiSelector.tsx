@@ -6,10 +6,15 @@
  *   4. "Proses ROI" button appears; user clicks it to confirm
  *
  * Works with mouse, touch, and pen via Pointer Events.
+ *
+ * Optional Wiener image filtering (Marks, L. D. 1996) can be applied
+ * to the cropped ROI before it enters the analysis pipeline.
  */
 import { useRef, useState, useCallback, useEffect } from "react";
 import { cropRoi, squareCenterCrop, type LoadedImage } from "@/lib/tiff";
 import { renderGrayscaleToCanvas } from "@/lib/render";
+import { wienerFilterRoi, type WienerMethod } from "@/lib/wiener";
+import { Sparkles, Eye, Check, Undo2, AlertCircle } from "lucide-react";
 
 interface RoiSelectorProps {
   image: LoadedImage;
@@ -37,6 +42,16 @@ interface Rect {
 
 const MAX_DISPLAY_WIDTH = 700;
 
+const FILTER_OPTIONS: { value: WienerMethod; label: string }[] = [
+  { value: "conventional", label: "Conventional Wiener Filter" },
+  { value: "parametric", label: "Parametric Wiener Filter" },
+  { value: "cannon", label: "Cannon Filter" },
+  {
+    value: "random_phase_parametric",
+    label: "Random-Phase Parametric Wiener Filter (Experimental)",
+  },
+];
+
 export default function RoiSelector({
   image,
   nmPerPx,
@@ -45,9 +60,24 @@ export default function RoiSelector({
 }: RoiSelectorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
+  const previewOrigRef = useRef<HTMLCanvasElement>(null);
+  const previewFilteredRef = useRef<HTMLCanvasElement>(null);
 
   const [phase, setPhase] = useState<SelectionPhase>("idle");
   const [rect, setRect] = useState<Rect | null>(null);
+
+  // Wiener filter state
+  const [filterMethod, setFilterMethod] = useState<WienerMethod | "none">("none");
+  const [noiseScale, setNoiseScale] = useState("1.0");
+  const [regularization, setRegularization] = useState("1.0");
+  const [stabilization, setStabilization] = useState("0.05");
+  const [filterError, setFilterError] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<Float64Array | null>(null);
+  const [previewDims, setPreviewDims] = useState<{ rows: number; cols: number } | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [filterApplied, setFilterApplied] = useState(false);
+  const [appliedFilterData, setAppliedFilterData] = useState<Float64Array | null>(null);
+  const [appliedFilterDims, setAppliedFilterDims] = useState<{ rows: number; cols: number } | null>(null);
 
   // Refs so pointer handlers always see current values without stale closures
   const phaseRef = useRef<SelectionPhase>("idle");
@@ -85,7 +115,6 @@ export default function RoiSelector({
     const h = Math.abs(rect.endY - rect.startY);
 
     if (w < 1 || h < 1) {
-      // Draw a small crosshair at the start point
       ctx.strokeStyle = "#f59e0b";
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -97,21 +126,18 @@ export default function RoiSelector({
       return;
     }
 
-    // Dim outside region
     ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
     ctx.fillRect(0, 0, canvas.width, y);
     ctx.fillRect(0, y, x, h);
     ctx.fillRect(x + w, y, canvas.width - x - w, h);
     ctx.fillRect(0, y + h, canvas.width, canvas.height - y - h);
 
-    // Selection border — solid when locked, dashed when drawing
     ctx.strokeStyle = phase === "locked" ? "#22c55e" : "#f59e0b";
     ctx.lineWidth = phase === "locked" ? 3 : 2;
     ctx.setLineDash(phase === "locked" ? [] : [6, 4]);
     ctx.strokeRect(x, y, w, h);
     ctx.setLineDash([]);
 
-    // Corner handles when locked
     if (phase === "locked") {
       ctx.fillStyle = "#22c55e";
       for (const [hx, hy] of [
@@ -126,7 +152,6 @@ export default function RoiSelector({
       }
     }
 
-    // Dimension label
     const imgW = w / scale;
     const imgH = h / scale;
     ctx.fillStyle = phase === "locked" ? "#22c55e" : "#f59e0b";
@@ -140,6 +165,34 @@ export default function RoiSelector({
     );
   }, [rect, phase, scale, nmPerPx]);
 
+  // Render preview canvases
+  useEffect(() => {
+    if (!showPreview) return;
+    const origCanvas = previewOrigRef.current;
+    const filteredCanvas = previewFilteredRef.current;
+    if (!origCanvas || !filteredCanvas) return;
+
+    const d = rectRef.current;
+    if (!d) return;
+
+    const x1 = Math.min(d.startX, d.endX) / scale;
+    const y1 = Math.min(d.startY, d.endY) / scale;
+    const x2 = Math.max(d.startX, d.endX) / scale;
+    const y2 = Math.max(d.startY, d.endY) / scale;
+
+    const cropped = cropRoi(image.data, image.rows, image.cols, x1, y1, x2, y2);
+    const squared = squareCenterCrop(cropped.data, cropped.rows, cropped.cols);
+
+    const dispSize = Math.min(300, squared.rows, squared.cols);
+    renderGrayscaleToCanvas(origCanvas, squared.data, squared.rows, squared.cols, dispSize, dispSize);
+
+    if (previewData && previewDims) {
+      renderGrayscaleToCanvas(filteredCanvas, previewData, previewDims.rows, previewDims.cols, dispSize, dispSize);
+    } else {
+      renderGrayscaleToCanvas(filteredCanvas, squared.data, squared.rows, squared.cols, dispSize, dispSize);
+    }
+  }, [showPreview, previewData, previewDims, image, scale]);
+
   const getPos = useCallback((e: React.PointerEvent) => {
     const canvas = overlayRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -150,21 +203,24 @@ export default function RoiSelector({
     };
   }, []);
 
-  // First click: set start. Second click while drawing: lock end.
   const handleClick = useCallback(
     (e: React.PointerEvent) => {
       e.preventDefault();
       const pos = getPos(e);
 
       if (phaseRef.current === "idle") {
-        // First click — set start point, enter drawing mode
         const newRect = { startX: pos.x, startY: pos.y, endX: pos.x, endY: pos.y };
         rectRef.current = newRect;
         setRect(newRect);
         phaseRef.current = "drawing";
         setPhase("drawing");
+        // Reset filter state when selection changes
+        setFilterApplied(false);
+        setAppliedFilterData(null);
+        setAppliedFilterDims(null);
+        setShowPreview(false);
+        setPreviewData(null);
       } else if (phaseRef.current === "drawing") {
-        // Second click — lock the rectangle
         const cur = rectRef.current;
         if (!cur) return;
         const locked = { ...cur, endX: pos.x, endY: pos.y };
@@ -172,12 +228,16 @@ export default function RoiSelector({
         setRect(locked);
         phaseRef.current = "locked";
         setPhase("locked");
+        setFilterApplied(false);
+        setAppliedFilterData(null);
+        setAppliedFilterDims(null);
+        setShowPreview(false);
+        setPreviewData(null);
       }
     },
     [getPos],
   );
 
-  // Live preview while drawing
   const handleMove = useCallback(
     (e: React.PointerEvent) => {
       if (phaseRef.current !== "drawing") return;
@@ -197,6 +257,123 @@ export default function RoiSelector({
     setRect(null);
     phaseRef.current = "idle";
     setPhase("idle");
+    setFilterError(null);
+    setPreviewData(null);
+    setPreviewDims(null);
+    setShowPreview(false);
+    setFilterApplied(false);
+    setAppliedFilterData(null);
+    setAppliedFilterDims(null);
+  }, []);
+
+  // ── Wiener filter helpers ──
+
+  const getCroppedRoi = useCallback(() => {
+    const d = rectRef.current;
+    if (!d) return null;
+    const x1 = Math.min(d.startX, d.endX) / scale;
+    const y1 = Math.min(d.startY, d.endY) / scale;
+    const x2 = Math.max(d.startX, d.endX) / scale;
+    const y2 = Math.max(d.startY, d.endY) / scale;
+    if (x2 - x1 < 10 || y2 - y1 < 10) return null;
+
+    const cropped = cropRoi(image.data, image.rows, image.cols, x1, y1, x2, y2);
+    const squared = squareCenterCrop(cropped.data, cropped.rows, cropped.cols);
+    return squared;
+  }, [image, scale]);
+
+  const validateParams = useCallback((): string | null => {
+    const roi = getCroppedRoi();
+    if (!roi) return "ROI belum dipilih.";
+    if (roi.rows < 16 || roi.cols < 16) {
+      return "Ukuran ROI minimal 16 × 16 piksel.";
+    }
+    const ns = parseFloat(noiseScale);
+    if (isNaN(ns) || ns <= 0) return "Noise Scale harus lebih besar dari 0.";
+    if (filterMethod === "parametric" || filterMethod === "random_phase_parametric") {
+      const reg = parseFloat(regularization);
+      if (isNaN(reg) || reg <= 0) return "Regularization (λ) harus lebih besar dari 0.";
+    }
+    if (filterMethod === "random_phase_parametric") {
+      const stab = parseFloat(stabilization);
+      if (isNaN(stab) || stab < 0) return "Stabilization tidak boleh negatif.";
+    }
+    return null;
+  }, [getCroppedRoi, noiseScale, regularization, stabilization, filterMethod]);
+
+  const handlePreviewFilter = useCallback(() => {
+    const err = validateParams();
+    if (err) {
+      setFilterError(err);
+      setPreviewData(null);
+      setShowPreview(true);
+      return;
+    }
+
+    const roi = getCroppedRoi();
+    if (!roi) return;
+
+    try {
+      const result = wienerFilterRoi(roi.data, roi.rows, roi.cols, {
+        method: filterMethod as WienerMethod,
+        noiseScale: parseFloat(noiseScale),
+        regularization: parseFloat(regularization),
+        stabilization: parseFloat(stabilization),
+      });
+      setPreviewData(result.data);
+      setPreviewDims({ rows: result.rows, cols: result.cols });
+      setFilterError(null);
+      setShowPreview(true);
+    } catch (e) {
+      setFilterError(e instanceof Error ? e.message : "Filter gagal dijalankan.");
+      setPreviewData(null);
+      setShowPreview(true);
+    }
+  }, [validateParams, getCroppedRoi, filterMethod, noiseScale, regularization, stabilization]);
+
+  const handleApplyFilter = useCallback(() => {
+    const err = validateParams();
+    if (err) {
+      setFilterError(err);
+      return;
+    }
+
+    const roi = getCroppedRoi();
+    if (!roi) return;
+
+    // If we already have preview data, use it; otherwise compute
+    if (previewData && previewDims) {
+      setAppliedFilterData(previewData);
+      setAppliedFilterDims(previewDims);
+      setFilterApplied(true);
+      setFilterError(null);
+      return;
+    }
+
+    try {
+      const result = wienerFilterRoi(roi.data, roi.rows, roi.cols, {
+        method: filterMethod as WienerMethod,
+        noiseScale: parseFloat(noiseScale),
+        regularization: parseFloat(regularization),
+        stabilization: parseFloat(stabilization),
+      });
+      setAppliedFilterData(result.data);
+      setAppliedFilterDims({ rows: result.rows, cols: result.cols });
+      setFilterApplied(true);
+      setFilterError(null);
+    } catch (e) {
+      setFilterError(e instanceof Error ? e.message : "Filter gagal dijalankan.");
+    }
+  }, [validateParams, getCroppedRoi, filterMethod, noiseScale, regularization, stabilization, previewData, previewDims]);
+
+  const handleResetFilter = useCallback(() => {
+    setFilterApplied(false);
+    setAppliedFilterData(null);
+    setAppliedFilterDims(null);
+    setPreviewData(null);
+    setPreviewDims(null);
+    setShowPreview(false);
+    setFilterError(null);
   }, []);
 
   const handleConfirm = useCallback(() => {
@@ -209,19 +386,31 @@ export default function RoiSelector({
 
     if (x2 - x1 < 10 || y2 - y1 < 10) return;
 
-    const cropped = cropRoi(image.data, image.rows, image.cols, x1, y1, x2, y2);
-    const squared = squareCenterCrop(cropped.data, cropped.rows, cropped.cols);
-
-    onConfirm({
-      data: squared.data,
-      rows: squared.rows,
-      cols: squared.cols,
-      x1,
-      y1,
-      x2,
-      y2,
-    });
-  }, [scale, image, onConfirm]);
+    // If filter was applied, use the filtered data; otherwise crop from original
+    if (filterApplied && appliedFilterData && appliedFilterDims) {
+      onConfirm({
+        data: appliedFilterData,
+        rows: appliedFilterDims.rows,
+        cols: appliedFilterDims.cols,
+        x1,
+        y1,
+        x2,
+        y2,
+      });
+    } else {
+      const cropped = cropRoi(image.data, image.rows, image.cols, x1, y1, x2, y2);
+      const squared = squareCenterCrop(cropped.data, cropped.rows, cropped.cols);
+      onConfirm({
+        data: squared.data,
+        rows: squared.rows,
+        cols: squared.cols,
+        x1,
+        y1,
+        x2,
+        y2,
+      });
+    }
+  }, [scale, image, onConfirm, filterApplied, appliedFilterData, appliedFilterDims]);
 
   const hasValidSelection =
     rect &&
@@ -234,6 +423,11 @@ export default function RoiSelector({
       : phase === "drawing"
         ? "crosshair"
         : "default";
+
+  const needsRegularization = filterMethod === "parametric" || filterMethod === "random_phase_parametric";
+  const needsStabilization = filterMethod === "random_phase_parametric";
+  const validationError = validateParams();
+  const canApply = !validationError && phase === "locked" && hasValidSelection && filterMethod !== "none";
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -330,6 +524,198 @@ export default function RoiSelector({
           )}
         </div>
       </div>
+
+      {/* ── Wiener Filter Panel ── */}
+      {phase === "locked" && hasValidSelection && (
+        <div className="mt-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="w-5 h-5 text-blue-600" />
+            <h3 className="text-lg font-semibold text-slate-800">
+              Image Filter (Wiener)
+            </h3>
+            {filterApplied && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+                <Check className="w-3 h-3" /> Filter aktif
+              </span>
+            )}
+          </div>
+
+          <p className="text-sm text-slate-500 mb-4">
+            Pilih filter untuk meningkatkan kualitas citra ROI sebelum analisis.
+            Filter bersifat opsional — pilih "None" untuk mempertahankan citra asli.
+          </p>
+
+          {/* Filter method dropdown */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Image Filter
+            </label>
+            <select
+              value={filterMethod}
+              onChange={(e) => {
+                setFilterMethod(e.target.value as WienerMethod | "none");
+                setFilterError(null);
+                setShowPreview(false);
+                setPreviewData(null);
+                setFilterApplied(false);
+                setAppliedFilterData(null);
+                setAppliedFilterDims(null);
+              }}
+              className="w-full max-w-md px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="none">None</option>
+              {FILTER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter parameters */}
+          {filterMethod !== "none" && (
+            <div className="grid sm:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  Noise Scale
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={noiseScale}
+                  onChange={(e) => {
+                    setNoiseScale(e.target.value);
+                    setFilterError(null);
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+              </div>
+              {needsRegularization && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-1">
+                    Regularization (λ)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={regularization}
+                    onChange={(e) => {
+                      setRegularization(e.target.value);
+                      setFilterError(null);
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+              )}
+              {needsStabilization && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-1">
+                    Stabilization
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={stabilization}
+                    onChange={(e) => {
+                      setStabilization(e.target.value);
+                      setFilterError(null);
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Experimental notice */}
+          {filterMethod === "random_phase_parametric" && (
+            <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+              <p className="text-xs text-amber-700">
+                <strong>Experimental:</strong> Random-Phase Parametric Wiener
+                menggunakan pendekatan stabilisasi, bukan implementasi penuh
+                formulasi variational random-phase.
+              </p>
+            </div>
+          )}
+
+          {/* Validation error */}
+          {filterError && filterMethod !== "none" && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-rose-600">{filterError}</p>
+            </div>
+          )}
+
+          {/* Filter action buttons */}
+          {filterMethod !== "none" && (
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={handlePreviewFilter}
+                disabled={phase !== "locked" || !hasValidSelection}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Eye className="w-4 h-4" />
+                Preview Filter
+              </button>
+              <button
+                onClick={handleApplyFilter}
+                disabled={!canApply}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Check className="w-4 h-4" />
+                Apply Filter
+              </button>
+              {filterApplied && (
+                <button
+                  onClick={handleResetFilter}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition"
+                >
+                  <Undo2 className="w-4 h-4" />
+                  Reset Filter
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Preview comparison */}
+          {showPreview && filterMethod !== "none" && (
+            <div className="mt-6">
+              <h4 className="text-sm font-semibold text-slate-700 mb-3">
+                Perbandingan Citra
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-medium text-slate-500 mb-2 text-center">
+                    ROI Asli
+                  </p>
+                  <div className="flex justify-center">
+                    <canvas
+                      ref={previewOrigRef}
+                      className="rounded-lg border border-slate-200"
+                      style={{ imageRendering: "pixelated", maxWidth: "100%" }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-slate-500 mb-2 text-center">
+                    Hasil Filter
+                  </p>
+                  <div className="flex justify-center">
+                    <canvas
+                      ref={previewFilteredRef}
+                      className="rounded-lg border border-slate-200"
+                      style={{ imageRendering: "pixelated", maxWidth: "100%" }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
