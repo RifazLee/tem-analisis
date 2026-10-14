@@ -78,6 +78,7 @@ export default function RoiSelector({
   const [filterApplied, setFilterApplied] = useState(false);
   const [appliedFilterData, setAppliedFilterData] = useState<Float64Array | null>(null);
   const [appliedFilterDims, setAppliedFilterDims] = useState<{ rows: number; cols: number } | null>(null);
+  const [filterProcessing, setFilterProcessing] = useState(false);
 
   // Refs so pointer handlers always see current values without stale closures
   const phaseRef = useRef<SelectionPhase>("idle");
@@ -313,22 +314,36 @@ export default function RoiSelector({
     const roi = getCroppedRoi();
     if (!roi) return;
 
-    try {
-      const result = wienerFilterRoi(roi.data, roi.rows, roi.cols, {
-        method: filterMethod as WienerMethod,
-        noiseScale: parseFloat(noiseScale),
-        regularization: parseFloat(regularization),
-        stabilization: parseFloat(stabilization),
-      });
-      setPreviewData(result.data);
-      setPreviewDims({ rows: result.rows, cols: result.cols });
-      setFilterError(null);
-      setShowPreview(true);
-    } catch (e) {
-      setFilterError(e instanceof Error ? e.message : "Filter gagal dijalankan.");
-      setPreviewData(null);
-      setShowPreview(true);
-    }
+    const method = filterMethod as WienerMethod;
+    const ns = parseFloat(noiseScale);
+    const reg = parseFloat(regularization);
+    const stab = parseFloat(stabilization);
+    const roiData = roi.data;
+    const roiRows = roi.rows;
+    const roiCols = roi.cols;
+
+    setFilterProcessing(true);
+    setShowPreview(true);
+    setPreviewData(null);
+
+    setTimeout(() => {
+      try {
+        const result = wienerFilterRoi(roiData, roiRows, roiCols, {
+          method,
+          noiseScale: ns,
+          regularization: reg,
+          stabilization: stab,
+        });
+        setPreviewData(result.data);
+        setPreviewDims({ rows: result.rows, cols: result.cols });
+        setFilterError(null);
+      } catch (e) {
+        setFilterError(e instanceof Error ? e.message : "Filter gagal dijalankan.");
+        setPreviewData(null);
+      } finally {
+        setFilterProcessing(false);
+      }
+    }, 50);
   }, [validateParams, getCroppedRoi, filterMethod, noiseScale, regularization, stabilization]);
 
   const handleApplyFilter = useCallback(() => {
@@ -350,20 +365,34 @@ export default function RoiSelector({
       return;
     }
 
-    try {
-      const result = wienerFilterRoi(roi.data, roi.rows, roi.cols, {
-        method: filterMethod as WienerMethod,
-        noiseScale: parseFloat(noiseScale),
-        regularization: parseFloat(regularization),
-        stabilization: parseFloat(stabilization),
-      });
-      setAppliedFilterData(result.data);
-      setAppliedFilterDims({ rows: result.rows, cols: result.cols });
-      setFilterApplied(true);
-      setFilterError(null);
-    } catch (e) {
-      setFilterError(e instanceof Error ? e.message : "Filter gagal dijalankan.");
-    }
+    const method = filterMethod as WienerMethod;
+    const ns = parseFloat(noiseScale);
+    const reg = parseFloat(regularization);
+    const stab = parseFloat(stabilization);
+    const roiData = roi.data;
+    const roiRows = roi.rows;
+    const roiCols = roi.cols;
+
+    setFilterProcessing(true);
+
+    setTimeout(() => {
+      try {
+        const result = wienerFilterRoi(roiData, roiRows, roiCols, {
+          method,
+          noiseScale: ns,
+          regularization: reg,
+          stabilization: stab,
+        });
+        setAppliedFilterData(result.data);
+        setAppliedFilterDims({ rows: result.rows, cols: result.cols });
+        setFilterApplied(true);
+        setFilterError(null);
+      } catch (e) {
+        setFilterError(e instanceof Error ? e.message : "Filter gagal dijalankan.");
+      } finally {
+        setFilterProcessing(false);
+      }
+    }, 50);
   }, [validateParams, getCroppedRoi, filterMethod, noiseScale, regularization, stabilization, previewData, previewDims]);
 
   const handleResetFilter = useCallback(() => {
@@ -374,6 +403,7 @@ export default function RoiSelector({
     setPreviewDims(null);
     setShowPreview(false);
     setFilterError(null);
+    setFilterProcessing(false);
   }, []);
 
   const handleConfirm = useCallback(() => {
@@ -654,7 +684,7 @@ export default function RoiSelector({
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={handlePreviewFilter}
-                disabled={phase !== "locked" || !hasValidSelection}
+                disabled={phase !== "locked" || !hasValidSelection || filterProcessing}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Eye className="w-4 h-4" />
@@ -662,7 +692,7 @@ export default function RoiSelector({
               </button>
               <button
                 onClick={handleApplyFilter}
-                disabled={!canApply}
+                disabled={!canApply || filterProcessing}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Check className="w-4 h-4" />
@@ -671,7 +701,8 @@ export default function RoiSelector({
               {filterApplied && (
                 <button
                   onClick={handleResetFilter}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition"
+                  disabled={filterProcessing}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Undo2 className="w-4 h-4" />
                   Reset Filter
@@ -680,8 +711,16 @@ export default function RoiSelector({
             </div>
           )}
 
+          {/* Processing indicator */}
+          {filterProcessing && (
+            <div className="mt-4 flex items-center gap-2 text-sm text-blue-600">
+              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              Memproses filter Wiener...
+            </div>
+          )}
+
           {/* Preview comparison */}
-          {showPreview && filterMethod !== "none" && (
+          {showPreview && filterMethod !== "none" && !filterProcessing && (
             <div className="mt-6">
               <h4 className="text-sm font-semibold text-slate-700 mb-3">
                 Perbandingan Citra

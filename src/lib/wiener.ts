@@ -52,104 +52,6 @@ function hanning2d(rows: number, cols: number): Float64Array {
   return w;
 }
 
-/**
- * Estimate noise power spectrum using a smoothed radial profile.
- * Uses the lower percentile of power at each radial frequency bin.
- */
-function estimateNoisePsd(
-  image: Float64Array,
-  rows: number,
-  cols: number,
-  smoothSigma = 1.0,
-  noisePercentile = 25,
-): Float64Array {
-  const centered = new Float64Array(rows * cols);
-  let mean = 0;
-  for (let i = 0; i < rows * cols; i++) mean += image[i];
-  mean /= rows * cols;
-  for (let i = 0; i < rows * cols; i++) centered[i] = image[i] - mean;
-
-  const window = hanning2d(rows, cols);
-  const windowed = new Float64Array(rows * cols);
-  for (let i = 0; i < rows * cols; i++) windowed[i] = centered[i] * window[i];
-
-  // FFT
-  const spectrum = fft2d(windowed, rows, cols, false);
-  const shifted = fftshift2d(spectrum, rows, cols);
-
-  // Power = |spectrum|^2
-  const power = new Float64Array(rows * cols);
-  for (let i = 0; i < rows * cols; i++) {
-    const re = shifted[i * 2];
-    const im = shifted[i * 2 + 1];
-    power[i] = re * re + im * im;
-  }
-
-  const cy = Math.floor(rows / 2);
-  const cx = Math.floor(cols / 2);
-  const maxBin = Math.min(rows, cols) / 2;
-  const maxBinInt = Math.floor(maxBin);
-
-  // Radial profile via percentile per bin
-  const radialProfile = new Float64Array(maxBinInt + 1);
-  for (let r = 0; r <= maxBinInt; r++) {
-    const values: number[] = [];
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const dy = row - cy;
-        const dx = col - cx;
-        const dist = Math.sqrt(dy * dy + dx * dx);
-        if (Math.floor(dist) === r) {
-          values.push(power[row * cols + col]);
-        }
-      }
-    }
-    if (values.length > 0) {
-      values.sort((a, b) => a - b);
-      const idx = Math.floor((noisePercentile / 100) * values.length);
-      radialProfile[r] = values[Math.min(idx, values.length - 1)];
-    }
-  }
-
-  // Interpolate over zero/invalid bins
-  const validBins: number[] = [];
-  const validVals: number[] = [];
-  for (let r = 0; r <= maxBinInt; r++) {
-    if (radialProfile[r] > 0) {
-      validBins.push(r);
-      validVals.push(radialProfile[r]);
-    }
-  }
-  if (validBins.length < 2) {
-    throw new Error("Estimasi spektrum noise tidak valid.");
-  }
-
-  for (let r = 0; r <= maxBinInt; r++) {
-    radialProfile[r] = interpLinear(validBins, validVals, r);
-  }
-
-  // Gaussian smoothing of radial profile
-  gaussianSmooth1d(radialProfile, smoothSigma);
-
-  // Extend radially over full frequency plane
-  const noisePsd = new Float64Array(rows * cols);
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const dy = row - cy;
-      const dx = col - cx;
-      const dist = Math.min(Math.sqrt(dy * dy + dx * dx), maxBin);
-      noisePsd[row * cols + col] = radialProfile[Math.floor(dist)];
-    }
-  }
-
-  // Ensure positive
-  for (let i = 0; i < rows * cols; i++) {
-    if (noisePsd[i] <= 0) noisePsd[i] = EPS;
-  }
-
-  return noisePsd;
-}
-
 function interpLinear(xs: number[], ys: number[], x: number): number {
   if (x <= xs[0]) return ys[0];
   if (x >= xs[xs.length - 1]) return ys[ys.length - 1];
@@ -185,6 +87,86 @@ function gaussianSmooth1d(arr: Float64Array, sigma: number): void {
     result[i] = acc;
   }
   for (let i = 0; i < n; i++) arr[i] = result[i];
+}
+
+/**
+ * Estimate noise PSD from an already-computed shifted power spectrum.
+ * Uses the lower percentile of power at each radial frequency bin.
+ * Single O(rows*cols) pass to assign pixels to bins, then sorts per bin.
+ */
+function estimateNoisePsdFromPower(
+  power: Float64Array,
+  rows: number,
+  cols: number,
+  smoothSigma = 1.0,
+  noisePercentile = 25,
+): Float64Array {
+  const cy = Math.floor(rows / 2);
+  const cx = Math.floor(cols / 2);
+  const maxBinInt = Math.floor(Math.min(rows, cols) / 2);
+
+  // Single pass: assign each pixel to a radial bin
+  const binValues: number[][] = [];
+  for (let r = 0; r <= maxBinInt; r++) binValues.push([]);
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const dy = row - cy;
+      const dx = col - cx;
+      const dist = Math.sqrt(dy * dy + dx * dx);
+      const bin = Math.floor(dist);
+      if (bin <= maxBinInt) {
+        binValues[bin].push(power[row * cols + col]);
+      }
+    }
+  }
+
+  // Compute percentile per bin
+  const radialProfile = new Float64Array(maxBinInt + 1);
+  for (let r = 0; r <= maxBinInt; r++) {
+    const vals = binValues[r];
+    if (vals.length > 0) {
+      vals.sort((a, b) => a - b);
+      const idx = Math.floor((noisePercentile / 100) * vals.length);
+      radialProfile[r] = vals[Math.min(idx, vals.length - 1)];
+    }
+  }
+
+  // Interpolate over zero/invalid bins
+  const validBins: number[] = [];
+  const validVals: number[] = [];
+  for (let r = 0; r <= maxBinInt; r++) {
+    if (radialProfile[r] > 0) {
+      validBins.push(r);
+      validVals.push(radialProfile[r]);
+    }
+  }
+  if (validBins.length < 2) {
+    throw new Error("Estimasi spektrum noise tidak valid.");
+  }
+
+  for (let r = 0; r <= maxBinInt; r++) {
+    radialProfile[r] = interpLinear(validBins, validVals, r);
+  }
+
+  gaussianSmooth1d(radialProfile, smoothSigma);
+
+  // Extend radially over full frequency plane
+  const noisePsd = new Float64Array(rows * cols);
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const dy = row - cy;
+      const dx = col - cx;
+      const dist = Math.min(Math.sqrt(dy * dy + dx * dx), maxBinInt);
+      noisePsd[row * cols + col] = radialProfile[Math.floor(dist)];
+    }
+  }
+
+  for (let i = 0; i < rows * cols; i++) {
+    if (noisePsd[i] <= 0) noisePsd[i] = EPS;
+  }
+
+  return noisePsd;
 }
 
 /**
@@ -230,11 +212,11 @@ export function wienerFilterRoi(
   const windowed = new Float64Array(rows * cols);
   for (let i = 0; i < rows * cols; i++) windowed[i] = centered[i] * window[i];
 
-  // FFT
+  // Forward FFT (single FFT — reuse for both filtering and noise estimation)
   const spectrum = fft2d(windowed, rows, cols, false);
   const shifted = fftshift2d(spectrum, rows, cols);
 
-  // Observed power
+  // Observed power = |spectrum|^2
   const observedPower = new Float64Array(rows * cols);
   for (let i = 0; i < rows * cols; i++) {
     const re = shifted[i * 2];
@@ -242,8 +224,8 @@ export function wienerFilterRoi(
     observedPower[i] = re * re + im * im;
   }
 
-  // Estimate noise PSD
-  const noisePsd = estimateNoisePsd(centered, rows, cols, 1.0, 25);
+  // Estimate noise PSD from the already-computed power spectrum (no redundant FFT)
+  const noisePsd = estimateNoisePsdFromPower(observedPower, rows, cols, 1.0, 25);
   for (let i = 0; i < rows * cols; i++) noisePsd[i] *= noiseScale;
 
   // Estimated signal power
@@ -299,7 +281,7 @@ export function wienerFilterRoi(
   // Take real part, compensate for window, restore mean
   const filtered = new Float64Array(rows * cols);
   for (let i = 0; i < rows * cols; i++) {
-    const windowedResult = filteredComplex[i * 2]; // real part
+    const windowedResult = filteredComplex[i * 2];
     let val = windowedResult / window[i] + meanIntensity;
     if (!isFinite(val)) val = roi[i];
     filtered[i] = val;
