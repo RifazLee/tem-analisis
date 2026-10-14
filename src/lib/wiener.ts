@@ -9,7 +9,7 @@
  *   - random_phase_parametric: stabilized approximation (experimental)
  */
 
-import { fft2d, fftshift2d, ifftshift2d } from "./fft";
+import { fft2d, fft2dComplex, fftshift2d, ifftshift2d } from "./fft";
 
 export type WienerMethod =
   | "conventional"
@@ -292,15 +292,17 @@ export function wienerFilterRoi(
     filteredShifted[i * 2 + 1] = shifted[i * 2 + 1] * gain[i];
   }
 
-  // Inverse FFT
+  // Inverse FFT on interleaved complex data
   const unshifted = ifftshift2d(filteredShifted, rows, cols);
-  const filteredComplex = fft2d(unshifted, rows, cols, true);
+  const filteredComplex = fft2dComplex(unshifted, rows, cols, true);
 
   // Take real part, compensate for window, restore mean
   const filtered = new Float64Array(rows * cols);
   for (let i = 0; i < rows * cols; i++) {
     const windowedResult = filteredComplex[i * 2]; // real part
-    filtered[i] = windowedResult / window[i] + meanIntensity;
+    let val = windowedResult / window[i] + meanIntensity;
+    if (!isFinite(val)) val = roi[i];
+    filtered[i] = val;
   }
 
   return { data: filtered, rows, cols };

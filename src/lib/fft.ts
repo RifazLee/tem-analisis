@@ -232,6 +232,51 @@ export function fft2d(
   return data;
 }
 
+/**
+ * 2D FFT of an interleaved complex array [re, im, re, im, ...] of length rows*cols*2.
+ * Operates in-place on a copy and returns the result.
+ */
+export function fft2dComplex(
+  data: Float64Array,
+  rows: number,
+  cols: number,
+  inverse = false,
+): Float64Array {
+  const result = new Float64Array(rows * cols * 2);
+  result.set(data);
+
+  // FFT each row
+  const rowData = new Float64Array(Math.max(rows, cols) * 2);
+  for (let r = 0; r < rows; r++) {
+    const offset = r * cols * 2;
+    for (let c = 0; c < cols; c++) {
+      rowData[c * 2] = result[offset + c * 2];
+      rowData[c * 2 + 1] = result[offset + c * 2 + 1];
+    }
+    fft1d(rowData, cols, inverse);
+    for (let c = 0; c < cols; c++) {
+      result[offset + c * 2] = rowData[c * 2];
+      result[offset + c * 2 + 1] = rowData[c * 2 + 1];
+    }
+  }
+
+  // FFT each column
+  const colData = new Float64Array(Math.max(rows, cols) * 2);
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      colData[r * 2] = result[(r * cols + c) * 2];
+      colData[r * 2 + 1] = result[(r * cols + c) * 2 + 1];
+    }
+    fft1d(colData, rows, inverse);
+    for (let r = 0; r < rows; r++) {
+      result[(r * cols + c) * 2] = colData[r * 2];
+      result[(r * cols + c) * 2 + 1] = colData[r * 2 + 1];
+    }
+  }
+
+  return result;
+}
+
 /** FFTshift: swap quadrants so DC is at center. Works on interleaved complex. */
 export function fftshift2d(
   data: Float64Array,
