@@ -160,7 +160,7 @@ export default function RoiSelector({
     ctx.textAlign = "left";
     const labelY = y > 20 ? y - 6 : y + h + 16;
     ctx.fillText(
-      `${Math.round(imgW)}×${Math.round(imgH)} px  (${(imgW * nmPerPx).toFixed(1)}×${(imgH * nmPerPx).toFixed(1)} nm)`,
+      `${Math.round(imgW)}×${Math.round(imgH)} px (square)  (${(imgW * nmPerPx).toFixed(1)}×${(imgH * nmPerPx).toFixed(1)} nm)`,
       x + 4,
       labelY,
     );
@@ -204,6 +204,50 @@ export default function RoiSelector({
     };
   }, []);
 
+  // Compute a square rect from a start point to a free pointer position.
+  // The square size = max(|dx|, |dy|); direction follows the pointer.
+  const makeSquare = useCallback(
+    (startX: number, startY: number, px: number, py: number): Rect => {
+      const dx = px - startX;
+      const dy = py - startY;
+      const size = Math.max(Math.abs(dx), Math.abs(dy));
+      const sx = dx >= 0 ? 1 : -1;
+      const sy = dy >= 0 ? 1 : -1;
+      let endX = startX + sx * size;
+      let endY = startY + sy * size;
+
+      // Clamp within canvas bounds, preserving the square by shrinking both dims
+      const canvas = overlayRef.current;
+      if (canvas) {
+        const cw = canvas.width;
+        const ch = canvas.height;
+        if (endX < 0) {
+          endX = 0;
+          endY = startY + sy * (endX - startX === 0 ? 0 : Math.abs(endX - startX));
+        }
+        if (endX > cw) {
+          const clampedSize = cw - startX;
+          if (clampedSize < size) {
+            endX = cw;
+            endY = startY + sy * clampedSize;
+          }
+        }
+        if (endY < 0) {
+          endY = 0;
+          const clampedSize = Math.abs(endY - startY);
+          endX = startX + sx * clampedSize;
+        }
+        if (endY > ch) {
+          const clampedSize = ch - startY;
+          endY = ch;
+          endX = startX + sx * clampedSize;
+        }
+      }
+      return { startX, startY, endX, endY };
+    },
+    [],
+  );
+
   const handleClick = useCallback(
     (e: React.PointerEvent) => {
       e.preventDefault();
@@ -215,7 +259,6 @@ export default function RoiSelector({
         setRect(newRect);
         phaseRef.current = "drawing";
         setPhase("drawing");
-        // Reset filter state when selection changes
         setFilterApplied(false);
         setAppliedFilterData(null);
         setAppliedFilterDims(null);
@@ -224,7 +267,7 @@ export default function RoiSelector({
       } else if (phaseRef.current === "drawing") {
         const cur = rectRef.current;
         if (!cur) return;
-        const locked = { ...cur, endX: pos.x, endY: pos.y };
+        const locked = makeSquare(cur.startX, cur.startY, pos.x, pos.y);
         rectRef.current = locked;
         setRect(locked);
         phaseRef.current = "locked";
@@ -236,7 +279,7 @@ export default function RoiSelector({
         setPreviewData(null);
       }
     },
-    [getPos],
+    [getPos, makeSquare],
   );
 
   const handleMove = useCallback(
@@ -246,11 +289,11 @@ export default function RoiSelector({
       const pos = getPos(e);
       const cur = rectRef.current;
       if (!cur) return;
-      const updated = { ...cur, endX: pos.x, endY: pos.y };
+      const updated = makeSquare(cur.startX, cur.startY, pos.x, pos.y);
       rectRef.current = updated;
       setRect(updated);
     },
-    [getPos],
+    [getPos, makeSquare],
   );
 
   const handleReset = useCallback(() => {
